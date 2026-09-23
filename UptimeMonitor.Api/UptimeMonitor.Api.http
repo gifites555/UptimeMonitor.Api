@@ -4,3 +4,12 @@ GET {{UptimeMonitor.Api_HostAddress}}/weatherforecast/
 Accept: application/json
 
 ###
+POST https://localhost:7078/api/monitors
+Content-Type: application/json
+
+{
+  "name": "My website",
+  "url": "https://example.com",
+  "checkIntervalSeconds": 60
+}
+
