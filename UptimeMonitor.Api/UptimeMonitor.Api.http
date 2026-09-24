@@ -13,3 +13,12 @@ Content-Type: application/json
   "checkIntervalSeconds": 60
 }
 
+###
+PUT https://localhost:7078/api/monitors/dcbb8040-54a3-4c18-bfc9-1d76008dac6d
+Content-Type: application/json
+
+{
+  "name": "Updated website",
+  "url": "https://example.com",
+  "checkIntervalSeconds": 120
+}

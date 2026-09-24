@@ -5,10 +5,12 @@ namespace UptimeMonitor.Api.Models
     public class CreateMonitorRequest
     {
         [Required]
+        [StringLength(200)]
         public string Name { get; set; } = string.Empty;
 
         [Required]
         [Url]
+        [StringLength(2048)]
         public string Url { get; set; } = string.Empty;
 
         [Range(10, 86400)]
