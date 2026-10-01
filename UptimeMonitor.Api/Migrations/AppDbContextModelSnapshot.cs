@@ -52,6 +52,30 @@ namespace UptimeMonitor.Api.Migrations
                     b.ToTable("check_results", (string)null);
                 });
 
+            modelBuilder.Entity("UptimeMonitor.Api.Models.Incident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("char(36)");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("MonitorId")
+                        .HasColumnType("char(36)");
+
+                    b.Property<DateTime?>("ResolvedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime(6)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MonitorId", "ResolvedAtUtc");
+
+                    b.ToTable("incidents", (string)null);
+                });
+
             modelBuilder.Entity("UptimeMonitor.Api.Models.MonitoredSite", b =>
                 {
                     b.Property<Guid>("Id")
@@ -78,6 +102,17 @@ namespace UptimeMonitor.Api.Migrations
                 });
 
             modelBuilder.Entity("UptimeMonitor.Api.Models.CheckResult", b =>
+                {
+                    b.HasOne("UptimeMonitor.Api.Models.MonitoredSite", "Monitor")
+                        .WithMany()
+                        .HasForeignKey("MonitorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Monitor");
+                });
+
+            modelBuilder.Entity("UptimeMonitor.Api.Models.Incident", b =>
                 {
                     b.HasOne("UptimeMonitor.Api.Models.MonitoredSite", "Monitor")
                         .WithMany()

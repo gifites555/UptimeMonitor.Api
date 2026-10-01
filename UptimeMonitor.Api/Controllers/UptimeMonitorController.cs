@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using UptimeMonitor.Api.Data;
 using UptimeMonitor.Api.Models;
+using UptimeMonitor.Api.Services;
 
 namespace UptimeMonitor.Api.Controllers
 {
@@ -10,10 +11,14 @@ namespace UptimeMonitor.Api.Controllers
     public class MonitorsController : ControllerBase
     {
         private readonly AppDbContext _db;
+        private readonly MonitorCheckService _checkService;
 
-        public MonitorsController(AppDbContext db)
+        public MonitorsController(
+            AppDbContext db,
+            MonitorCheckService checkService)
         {
             _db = db;
+            _checkService = checkService;
         }
 
         // Все сайты или поиск по имени
@@ -126,6 +131,140 @@ namespace UptimeMonitor.Api.Controllers
             }
 
             return NoContent();
+        }
+
+        // Сделать проверку сайта по ID
+        [HttpPost("{id:guid}/checks")]
+        public async Task<IActionResult> RunCheck(
+        Guid id,
+        CancellationToken cancellationToken)
+        {
+            var result = await _checkService.RunAsync(
+                id, cancellationToken);
+
+            if (result is null)
+            {
+                return NotFound();
+            }
+
+            return Ok(new
+            {
+                result.Id,
+                result.MonitorId,
+                result.CheckedAtUtc,
+                result.StatusCode,
+                result.ResponseTimeMs,
+                result.IsSuccessful,
+                result.ErrorMessage
+            });
+        }
+
+        // Получить список последних проверок
+        [HttpGet("{id:guid}/checks")]
+        public async Task<IActionResult> GetChecks(
+        Guid id,
+        CancellationToken cancellationToken)    
+        {
+             bool monitorExists = await _db.Monitors
+                  .AnyAsync(site => site.Id == id, cancellationToken);
+
+            if (!monitorExists)
+            {
+                return NotFound();
+            }
+
+            var checks = await _db.CheckResults
+                .AsNoTracking()
+                .Where(check => check.MonitorId == id)
+                .OrderByDescending(check => check.CheckedAtUtc)
+                .Take(50)
+                .Select(check => new
+                {
+                    check.Id,
+                    check.MonitorId,
+                    check.CheckedAtUtc,
+                    check.StatusCode,
+                    check.ResponseTimeMs,
+                    check.IsSuccessful,
+                    check.ErrorMessage
+                })
+                .ToArrayAsync(cancellationToken);
+
+            return Ok(checks);
+        }
+
+        // Получить статус сайта по ID
+        [HttpGet("{id:guid}/status")]
+        public async Task<IActionResult> GetStatus(
+        Guid id,
+        CancellationToken cancellationToken)
+        {
+            var monitor = await _db.Monitors
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    site => site.Id == id,
+                    cancellationToken);
+
+            if (monitor is null)
+            {
+                return NotFound();
+            }
+
+            var lastCheck = await _db.CheckResults
+                .AsNoTracking()
+                .Where(check => check.MonitorId == id)
+                .OrderByDescending(check => check.CheckedAtUtc)
+                .Select(check => new
+                {
+                    check.CheckedAtUtc,
+                    check.StatusCode,
+                    check.ResponseTimeMs,
+                    check.IsSuccessful,
+                    check.ErrorMessage
+                })
+                .FirstOrDefaultAsync(cancellationToken);
+
+            return Ok(new
+            {
+                monitor.Id,
+                monitor.Name,
+                monitor.Url,
+                monitor.CheckIntervalSeconds,
+                LastCheck = lastCheck
+            });
+        }
+
+        // Получить список последних инцидентов
+        [HttpGet("{id:guid}/incidents")]
+        public async Task<IActionResult> GetIncidents(
+        Guid id,
+        CancellationToken cancellationToken)
+        {
+            var monitorExists = await _db.Monitors
+                .AnyAsync(site => site.Id == id, cancellationToken);
+
+            if (!monitorExists)
+            {
+                return NotFound();
+            }
+
+            var incidents = await _db.Incidents
+                .AsNoTracking()
+                .Where(incident => incident.MonitorId == id)
+                .OrderByDescending(incident => incident.StartedAtUtc)
+                .Take(50)
+                .Select(incident => new
+                {
+                    incident.Id,
+                    incident.MonitorId,
+                    incident.StartedAtUtc,
+                    incident.ResolvedAtUtc,
+                    incident.ErrorMessage,
+                    IsOpen = incident.ResolvedAtUtc == null
+                })
+                .ToArrayAsync(cancellationToken);
+
+            return Ok(incidents);
         }
     }
 }

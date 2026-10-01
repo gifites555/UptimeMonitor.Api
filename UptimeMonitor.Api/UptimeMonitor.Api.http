@@ -22,3 +22,49 @@ Content-Type: application/json
   "url": "https://example.com",
   "checkIntervalSeconds": 120
 }
+
+###
+POST https://localhost:7078/api/monitors/dcbb8040-54a3-4c18-bfc9-1d76008dac6d/checks
+
+###
+PUT https://localhost:7078/api/monitors/dcbb8040-54a3-4c18-bfc9-1d76008dac6d
+Content-Type: application/json
+
+{
+  "name": "Incident test",
+  "url": "https://example.invalid",
+  "checkIntervalSeconds": 60
+}
+
+###
+POST https://localhost:7078/api/monitors
+Content-Type: application/json
+
+{
+  "name": "Incident test",
+  "url": "https://example.invalid",
+  "checkIntervalSeconds": 60
+}
+
+###
+PUT https://localhost:7078/api/monitors/94fe1920-2cb4-4788-bd65-4362ba3e9827
+Content-Type: application/json
+
+{
+  "name": "Incident test",
+  "url": "https://example.com",
+  "checkIntervalSeconds": 60
+}
+
+###
+PUT https://localhost:7078/api/monitors/94fe1920-2cb4-4788-bd65-4362ba3e9827
+Content-Type: application/json
+
+{
+  "name": "Incident test",
+  "url": "https://example.com",
+  "checkIntervalSeconds": 60
+}
+
+  ###
+POST https://localhost:7078/api/monitors/94fe1920-2cb4-4788-bd65-4362ba3e9827/checks

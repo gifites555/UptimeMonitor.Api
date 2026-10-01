@@ -14,6 +14,8 @@ namespace UptimeMonitor.Api.Data
 
         public DbSet<CheckResult> CheckResults => Set<CheckResult>();
 
+        public DbSet<Incident> Incidents => Set<Incident>();
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
@@ -70,6 +72,40 @@ namespace UptimeMonitor.Api.Data
             monitor.Property(site => site.CheckIntervalSeconds)
                 .HasDefaultValue(60)
                 .IsRequired();
+
+            var incident = modelBuilder.Entity<Incident>();
+
+            incident.ToTable("incidents");
+
+            incident.HasKey(item => item.Id);
+
+            incident.Property(item => item.Id)
+                .HasColumnType("char(36)")
+                .ValueGeneratedNever();
+
+            incident.Property(item => item.MonitorId)
+                .HasColumnType("char(36)");
+
+            incident.Property(item => item.StartedAtUtc)
+                .HasColumnType("datetime(6)")
+                .IsRequired();
+
+            incident.Property(item => item.ResolvedAtUtc)
+                .HasColumnType("datetime(6)");
+
+            incident.Property(item => item.ErrorMessage)
+                .HasColumnType("text");
+
+            incident.HasOne(item => item.Monitor)
+                .WithMany()
+                .HasForeignKey(item => item.MonitorId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            incident.HasIndex(item => new
+            {
+                item.MonitorId,
+                item.ResolvedAtUtc
+            });
         }
     }
 }
