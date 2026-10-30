@@ -1,143 +1,49 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using UptimeMonitor.Api.Configuration;
 using UptimeMonitor.Api.Data;
 
-namespace UptimeMonitor.Api.Services
+namespace UptimeMonitor.Api.Services;
+
+public sealed class MonitorWorker(IServiceScopeFactory scopeFactory, IOptions<MonitoringOptions> options,
+    ILogger<MonitorWorker> logger) : BackgroundService
 {
-    public class MonitorWorker : BackgroundService
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        private readonly IServiceScopeFactory _scopeFactory;
-        private readonly ILogger<MonitorWorker> _logger;
-
-        public MonitorWorker(
-            IServiceScopeFactory scopeFactory,
-            ILogger<MonitorWorker> logger)
-        {
-            _scopeFactory = scopeFactory;
-            _logger = logger;
-        }
-
-        protected override async Task ExecuteAsync(
-            CancellationToken stoppingToken)
+        if (!options.Value.Enabled) return;
+        var nextCleanup = DateTime.MinValue;
+        while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                while (!stoppingToken.IsCancellationRequested)
+                await using var scope = scopeFactory.CreateAsyncScope();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var ids = await db.Monitors.AsNoTracking().Select(s => s.Id).ToArrayAsync(stoppingToken);
+                await Parallel.ForEachAsync(ids, new ParallelOptions
+                {
+                    MaxDegreeOfParallelism = options.Value.MaxConcurrentChecks, CancellationToken = stoppingToken
+                }, async (id, token) =>
                 {
                     try
                     {
-                        await CheckMonitorsAsync(stoppingToken);
+                        await using var checkScope = scopeFactory.CreateAsyncScope();
+                        await checkScope.ServiceProvider.GetRequiredService<MonitorCheckService>().RunAsync(id, token, onlyIfDue: true);
                     }
-                    catch (OperationCanceledException)
-                        when (stoppingToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(
-                            ex, "Ошибка фонового обхода сайтов.");
-                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+                    catch (Exception ex) { logger.LogError(ex, "Не удалось проверить сайт {MonitorId}.", id); }
+                });
 
-                    await Task.Delay(
-                        TimeSpan.FromSeconds(5),
-                        stoppingToken);
-                }
-            }
-            catch (OperationCanceledException)
-                when (stoppingToken.IsCancellationRequested)
-            {
-                // Приложение завершает работу.
-            }
-        }
-
-        private async Task CheckMonitorsAsync(
-            CancellationToken cancellationToken)
-        {
-            Guid[] monitorIds;
-
-            await using (var scope = _scopeFactory.CreateAsyncScope())
-            {
-                var db = scope.ServiceProvider
-                    .GetRequiredService<AppDbContext>();
-
-                monitorIds = await db.Monitors
-                    .Select(site => site.Id)
-                    .ToArrayAsync(cancellationToken);
-            }
-
-            foreach (var id in monitorIds)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                try
+                if (DateTime.UtcNow >= nextCleanup)
                 {
-                    await CheckIfDueAsync(id, cancellationToken);
-                }
-                catch (OperationCanceledException)
-                    when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(
-                        ex, "Не удалось проверить сайт {MonitorId}.", id);
+                    await scope.ServiceProvider.GetRequiredService<HistoryRetentionService>().CleanupAsync(stoppingToken);
+                    nextCleanup = DateTime.UtcNow.AddHours(1);
                 }
             }
-        }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
+            catch (Exception ex) { logger.LogError(ex, "Ошибка фонового мониторинга."); }
 
-        private async Task CheckIfDueAsync(
-    Guid id,
-    CancellationToken cancellationToken)
-        {
-            await using var scope = _scopeFactory.CreateAsyncScope();
-
-            var db = scope.ServiceProvider
-                .GetRequiredService<AppDbContext>();
-
-            var checkService = scope.ServiceProvider
-                .GetRequiredService<MonitorCheckService>();
-
-            var monitor = await db.Monitors
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    site => site.Id == id,
-                    cancellationToken);
-
-            if (monitor is null)
-            {
-                return;
-            }
-
-            var lastCheckAt = await db.CheckResults
-                .Where(check => check.MonitorId == id)
-                .MaxAsync(
-                    check => (DateTime?)check.CheckedAtUtc,
-                    cancellationToken);
-
-            if (lastCheckAt.HasValue)
-            {
-                var nextCheckAt = lastCheckAt.Value
-                    .AddSeconds(monitor.CheckIntervalSeconds);
-
-                if (DateTime.UtcNow < nextCheckAt)
-                {
-                    return;
-                }
-            }
-
-            var result = await checkService.RunAsync(
-                id, cancellationToken);
-
-            if (result is null)
-            {
-                return;
-            }
-
-            _logger.LogInformation(
-                "Сайт {MonitorId} проверен. Успешно: {Success}",
-                id,
-                result.IsSuccessful);
+            try { await Task.Delay(TimeSpan.FromSeconds(options.Value.PollIntervalSeconds), stoppingToken); }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { break; }
         }
     }
 }

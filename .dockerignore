@@ -1,0 +1,14 @@
+**/bin
+**/obj
+**/.vs
+.git
+.github
+.env
+.env.*
+**/secrets.json
+**/appsettings.Local.json
+TestResults
+artifacts
+UptimeMonitor.Api.Tests
+*.mwb
+

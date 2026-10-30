@@ -9,7 +9,7 @@ namespace UptimeMonitor.Api.Models
         public string Name { get; set; } = string.Empty;
 
         [Required]
-        [Url]
+        [PublicHttpUrl]
         [StringLength(2048)]
         public string Url { get; set; } = string.Empty;
 

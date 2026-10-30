@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Мониторинг доступности сайтов, времени ответа и истории инцидентов.">
+  <title>Uptime Monitor — доступность сайтов</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true">↗</span> Uptime<span>Monitor</span></a>
+    <span class="workspace">Личная панель мониторинга</span>
+    <button id="access-button" class="quiet">Ключ доступа</button>
+  </header>
+  <main>
+    <section class="intro">
+      <div><p class="eyebrow">ОБЗОР СИСТЕМЫ</p><h1>Сайты под наблюдением<span>.</span></h1>
+      <p class="muted">Доступность, время ответа и история сбоев — в одном месте.</p></div>
+      <button id="add-button" class="primary">＋ Добавить сайт</button>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="metrics" aria-label="Сводка мониторинга">
+      <article><span class="metric-label">Всего сайтов</span><strong id="total">—</strong><span>На мониторинге</span></article>
+      <article><span class="metric-label"><i class="dot up"></i> Доступны</span><strong id="up">—</strong><span>Успешный HTTP-ответ</span></article>
+      <article><span class="metric-label"><i class="dot down"></i> Недоступны</span><strong id="down">—</strong><span>Проверка не прошла</span></article>
+      <article><span class="metric-label"><i class="dot stale"></i> Нет свежих данных</span><strong id="unknown">—</strong><span>Ожидают проверки</span></article>
+    </section>
+    <section class="monitor-section">
+      <div class="section-heading"><div><h2>Ваши сайты <span id="count" class="count">0</span></h2>
+      <p id="updated" class="muted small">Подключаемся к серверу…</p></div><button id="refresh-button" class="secondary">↻ Обновить</button></div>
+      <div class="toolbar">
+        <label class="search"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Найти по имени или адресу" aria-label="Поиск сайтов"></label>
+        <label class="filter">Статус <select id="status-filter"><option value="all">Все сайты</option><option value="up">Доступны</option><option value="down">Недоступны</option><option value="stale">Данные устарели</option><option value="unknown">Ещё не проверены</option></select></label>
+      </div>
+      <div class="table-scroll"><table class="monitors-table">
+        <thead><tr><th>Сайт</th><th>Статус</th><th>Время ответа</th><th>Успешных за 24 ч</th><th>Последняя проверка</th><th><span class="sr-only">Действия</span></th></tr></thead>
+        <tbody id="monitors"></tbody>
+      </table></div>
+      <div id="empty" class="empty" hidden><span class="empty-icon" aria-hidden="true">◎</span><h3 id="empty-title">Добавьте первый сайт</h3><p id="empty-text">Укажите адрес — сервер начнёт проверять его автоматически.</p><button id="empty-add" class="secondary">Добавить сайт</button></div>
+      <div id="loading" class="empty">Загружаем мониторы…</div>
+    </section>
+    <section id="details" class="details" hidden aria-labelledby="detail-title">
+      <div class="section-heading"><div><p class="eyebrow">ИСТОРИЯ НАБЛЮДЕНИЙ</p><h2 id="detail-title"></h2></div><button id="close-details" class="quiet">Закрыть ×</button></div>
+      <p id="detail-summary" class="muted"></p>
+      <div id="history-bars" class="history-bars" aria-label="Последние проверки"></div>
+      <p class="small muted">Последние 50 проверок, слева направо от старых к новым. Каждый столбик — одна проверка.</p>
+      <div class="detail-grid">
+        <div><h3>Проверки</h3><div class="table-scroll history-scroll"><table><thead><tr><th>Время</th><th>Результат</th><th>Ответ</th></tr></thead><tbody id="checks"></tbody></table></div></div>
+        <div><h3>Инциденты</h3><div id="incidents" class="incident-list"></div></div>
+      </div>
+    </section>
+    <aside class="perspective"><span aria-hidden="true">ⓘ</span><div><strong>Проверка со стороны сервера</strong><p>Статус отражает доступность из сети сервера мониторинга. Он помогает сравнить результат с вашей сетью, но не подтверждает глобальный сбой. HTTP 403/429 может означать блокировку автоматических запросов.</p></div></aside>
+    <footer><span><i class="dot up"></i> Uptime Monitor</span><span>Автообновление каждые 15 секунд · время указано в вашем часовом поясе</span></footer>
+  </main>
+  <dialog id="monitor-dialog">
+    <form id="monitor-form">
+      <div class="dialog-heading"><h2 id="form-title">Добавить сайт</h2><button type="button" class="quiet" data-close="monitor-dialog" aria-label="Закрыть">×</button></div>
+      <label>Название<input name="name" required maxlength="200" placeholder="Например, YouTube"></label>
+      <label>Адрес сайта<input name="url" required type="url" maxlength="2048" placeholder="https://www.youtube.com"></label>
+      <p id="url-help" class="small muted">Публичный HTTP/HTTPS адрес, стандартный порт 80 или 443.</p>
+      <label>Интервал проверки, секунд<input name="checkIntervalSeconds" required type="number" min="10" max="86400" value="60"></label>
+      <p id="form-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="monitor-dialog">Отмена</button><button type="submit" class="primary">Сохранить</button></div>
+    </form>
+  </dialog>
+  <dialog id="access-dialog">
+    <form id="access-form">
+      <div class="dialog-heading"><h2>Доступ к мониторингу</h2><button type="button" class="quiet" data-close="access-dialog" aria-label="Закрыть">×</button></div>
+      <p class="muted">Введите ключ, заданный владельцем сервера. Он хранится только в памяти этой вкладки.</p>
+      <label>Ключ доступа<input id="api-key" type="password" required minlength="32" maxlength="512" autocomplete="off"></label>
+      <p id="access-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="logout" type="button" class="secondary">Забыть ключ</button><button type="submit" class="primary">Подключиться</button></div>
+    </form>
+  </dialog>
+  <dialog id="delete-dialog">
+    <form id="delete-form">
+      <h2>Удалить монитор?</h2><p id="delete-description" class="muted"></p><p>История проверок и инцидентов этого сайта также будет удалена.</p>
+      <p id="delete-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="secondary" data-close="delete-dialog">Отмена</button><button type="submit" class="danger">Удалить</button></div>
+    </form>
+  </dialog>
+</body>
+</html>

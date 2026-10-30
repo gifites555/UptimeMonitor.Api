@@ -12,6 +12,7 @@
 
         public string? ErrorMessage { get; set; }
 
+        [System.Text.Json.Serialization.JsonIgnore]
         public MonitoredSite Monitor { get; set; } = null!;
     }
 }

@@ -1,79 +1,67 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using UptimeMonitor.Api.Configuration;
 using UptimeMonitor.Api.Data;
 using UptimeMonitor.Api.Models;
 
-namespace UptimeMonitor.Api.Services
+namespace UptimeMonitor.Api.Services;
+
+public sealed class MonitorCheckService(AppDbContext db, WebsiteChecker checker,
+    MonitorLocks locks, CheckConcurrency concurrency, IOptions<MonitoringOptions> options)
 {
-    public class MonitorCheckService
+    public async Task<CheckResult?> RunAsync(Guid monitorId, CancellationToken cancellationToken, bool onlyIfDue = false)
     {
-        private readonly AppDbContext _db;
-        private readonly WebsiteChecker _checker;
-
-        private static readonly SemaphoreSlim CheckLock = new(1, 1);
-
-        public MonitorCheckService(
-            AppDbContext db,
-            WebsiteChecker checker)
+        var gate = locks.For(monitorId);
+        await gate.WaitAsync(cancellationToken);
+        try
         {
-            _db = db;
-            _checker = checker;
-        }
+            var monitor = await db.Monitors.AsNoTracking().FirstOrDefaultAsync(s => s.Id == monitorId, cancellationToken);
+            if (monitor is null) return null;
 
-        public async Task<CheckResult?> RunAsync(
-            Guid monitorId,
-            CancellationToken cancellationToken)
-        {
-            await CheckLock.WaitAsync(cancellationToken);
+            var lastCheckAt = await db.CheckResults.Where(c => c.MonitorId == monitorId)
+                .MaxAsync(c => (DateTime?)c.CheckedAtUtc, cancellationToken);
+            // Recheck under the lock: a manual check may have run while the worker waited.
+            if (onlyIfDue && lastCheckAt.HasValue
+                && DateTime.UtcNow < lastCheckAt.Value.AddSeconds(monitor.CheckIntervalSeconds)) return null;
 
+            await concurrency.Gate.WaitAsync(cancellationToken);
             try
             {
-                var monitor = await _db.Monitors
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(
-                        site => site.Id == monitorId,
-                        cancellationToken);
-
-                if (monitor is null)
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeout.CancelAfter(TimeSpan.FromSeconds(options.Value.TimeoutSeconds));
+                CheckResult result;
+                try { result = await checker.CheckAsync(monitor, timeout.Token); }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
                 {
-                    return null;
+                    result = new CheckResult
+                    {
+                        Id = Guid.NewGuid(),
+                        MonitorId = monitorId,
+                        CheckedAtUtc = DateTime.UtcNow,
+                        ResponseTimeMs = options.Value.TimeoutSeconds * 1000L,
+                        ErrorMessage = "Сайт не ответил за отведённое время."
+                    };
                 }
 
-                var result = await _checker.CheckAsync(
-                    monitor, cancellationToken);
-
-                var openIncident = await _db.Incidents
-                    .FirstOrDefaultAsync(
-                        incident => incident.MonitorId == monitorId
-                            && incident.ResolvedAtUtc == null,
-                        cancellationToken);
-
+                var openIncident = await db.Incidents.FirstOrDefaultAsync(
+                    i => i.MonitorId == monitorId && i.ResolvedAtUtc == null, cancellationToken);
                 if (!result.IsSuccessful && openIncident is null)
-                {
-                    var incident = new Incident
+                    db.Incidents.Add(new Incident
                     {
                         Id = Guid.NewGuid(),
                         MonitorId = monitorId,
                         StartedAtUtc = result.CheckedAtUtc,
                         ErrorMessage = result.ErrorMessage
-                            ?? $"Сайт вернул HTTP {result.StatusCode}."
-                    };
-
-                    _db.Incidents.Add(incident);
-                }
+                    });
                 else if (result.IsSuccessful && openIncident is not null)
-                {
                     openIncident.ResolvedAtUtc = result.CheckedAtUtc;
-                }
 
-                _db.CheckResults.Add(result);
-                await _db.SaveChangesAsync(cancellationToken);
-
+                db.CheckResults.Add(result);
+                await db.SaveChangesAsync(cancellationToken);
                 return result;
             }
-            finally
-            {
-                CheckLock.Release();
-            }
+            finally { concurrency.Gate.Release(); }
         }
+        finally { gate.Release(); }
     }
 }

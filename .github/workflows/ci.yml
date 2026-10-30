@@ -1,0 +1,88 @@
+name: Build and test
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        database: [sqlite, mysql]
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-test-password
+          MYSQL_ROOT_HOST: "%"
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Restore and audit
+        run: dotnet restore UptimeMonitor.Api.slnx -p:NuGetAudit=true -p:NuGetAuditMode=all -warnaserror
+      - name: Build
+        run: dotnet build UptimeMonitor.Api.slnx -c Release --no-restore -warnaserror
+      - name: Test SQLite
+        if: matrix.database == 'sqlite'
+        run: dotnet test UptimeMonitor.Api.slnx -c Release --no-build --logger trx --results-directory TestResults
+      - name: Test MySQL migrations and API
+        if: matrix.database == 'mysql'
+        env:
+          UPTIME_TEST_MYSQL: "Server=127.0.0.1;Port=3306;User=root;Password=ci-test-password;SslMode=Disabled"
+        run: dotnet test UptimeMonitor.Api.slnx -c Release --no-build --logger trx --results-directory TestResults
+      - name: Check browser JavaScript
+        run: node --check UptimeMonitor.Api/wwwroot/app.js
+      - name: Publish
+        run: dotnet publish UptimeMonitor.Api/UptimeMonitor.Api.csproj -c Release --no-build -o artifacts/app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.database }}
+          path: TestResults
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and smoke-test Compose
+        shell: bash
+        run: |
+          export MYSQL_PASSWORD=ci-database-password
+          export MYSQL_ROOT_PASSWORD=ci-root-password
+          export API_KEY=ci-only-api-key-with-at-least-32-characters
+          docker compose up -d --build
+          for attempt in {1..60}; do
+            if curl --fail --silent http://localhost:8080/health/ready; then break; fi
+            sleep 3
+          done
+          curl --fail http://localhost:8080/health/ready
+          curl --fail http://localhost:8080/
+          curl --fail -H "X-Api-Key: $API_KEY" http://localhost:8080/api/monitors/overview
+      - name: Container logs
+        if: failure()
+        run: docker compose logs
+        env:
+          MYSQL_PASSWORD: ci-database-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          API_KEY: ci-only-api-key-with-at-least-32-characters
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+        env:
+          MYSQL_PASSWORD: ci-database-password
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          API_KEY: ci-only-api-key-with-at-least-32-characters
+

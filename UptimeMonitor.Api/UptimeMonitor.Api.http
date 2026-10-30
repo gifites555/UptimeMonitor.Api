@@ -1,70 +1,58 @@
-@UptimeMonitor.Api_HostAddress = http://localhost:5134
+@host = http://localhost:5134
+# In Production replace this value with your key. Do not commit real keys.
+@apiKey = local-development
+# Copy the id from a POST response.
+@monitorId = 00000000-0000-0000-0000-000000000000
 
-GET {{UptimeMonitor.Api_HostAddress}}/weatherforecast/
-Accept: application/json
+### Readiness
+GET {{host}}/health/ready
 
-###
-POST https://localhost:7078/api/monitors
+### Dashboard data
+GET {{host}}/api/monitors/overview
+X-Api-Key: {{apiKey}}
+
+### Create
+POST {{host}}/api/monitors
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 {
-  "name": "My website",
+  "name": "Example",
   "url": "https://example.com",
   "checkIntervalSeconds": 60
 }
 
-###
-PUT https://localhost:7078/api/monitors/dcbb8040-54a3-4c18-bfc9-1d76008dac6d
+### List and search
+GET {{host}}/api/monitors?name=Example&limit=100&offset=0
+X-Api-Key: {{apiKey}}
+
+### Status
+GET {{host}}/api/monitors/{{monitorId}}/status
+X-Api-Key: {{apiKey}}
+
+### Manual check
+POST {{host}}/api/monitors/{{monitorId}}/checks
+X-Api-Key: {{apiKey}}
+
+### Check history
+GET {{host}}/api/monitors/{{monitorId}}/checks?limit=50&offset=0
+X-Api-Key: {{apiKey}}
+
+### Incidents
+GET {{host}}/api/monitors/{{monitorId}}/incidents?limit=50&offset=0
+X-Api-Key: {{apiKey}}
+
+### Update
+PUT {{host}}/api/monitors/{{monitorId}}
+X-Api-Key: {{apiKey}}
 Content-Type: application/json
 
 {
-  "name": "Updated website",
-  "url": "https://example.com",
+  "name": "Example (renamed)",
+  "url": "https://example.com/",
   "checkIntervalSeconds": 120
 }
 
-###
-POST https://localhost:7078/api/monitors/dcbb8040-54a3-4c18-bfc9-1d76008dac6d/checks
-
-###
-PUT https://localhost:7078/api/monitors/dcbb8040-54a3-4c18-bfc9-1d76008dac6d
-Content-Type: application/json
-
-{
-  "name": "Incident test",
-  "url": "https://example.invalid",
-  "checkIntervalSeconds": 60
-}
-
-###
-POST https://localhost:7078/api/monitors
-Content-Type: application/json
-
-{
-  "name": "Incident test",
-  "url": "https://example.invalid",
-  "checkIntervalSeconds": 60
-}
-
-###
-PUT https://localhost:7078/api/monitors/94fe1920-2cb4-4788-bd65-4362ba3e9827
-Content-Type: application/json
-
-{
-  "name": "Incident test",
-  "url": "https://example.com",
-  "checkIntervalSeconds": 60
-}
-
-###
-PUT https://localhost:7078/api/monitors/94fe1920-2cb4-4788-bd65-4362ba3e9827
-Content-Type: application/json
-
-{
-  "name": "Incident test",
-  "url": "https://example.com",
-  "checkIntervalSeconds": 60
-}
-
-  ###
-POST https://localhost:7078/api/monitors/94fe1920-2cb4-4788-bd65-4362ba3e9827/checks
+### Delete monitor and its history
+DELETE {{host}}/api/monitors/{{monitorId}}
+X-Api-Key: {{apiKey}}
